@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>数独求解器 — 教学版</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: "Microsoft YaHei","PingFang SC",sans-serif; background: #f0f2f5; color: #333; }
+header { background: #1a1a2e; color: #fff; padding: 14px 24px; text-align: center; }
+header h1 { font-size: 22px; font-weight: 600; letter-spacing: 2px; }
+main { max-width: 1000px; margin: 16px auto; padding: 0 16px; display: flex; gap: 20px; flex-wrap: wrap; }
+.left { flex: 0 0 390px; }
+.right { flex: 1; min-width: 300px; }
+
+/* grid */
+.grid-wrap { display: flex; justify-content: center; margin-bottom: 12px; position: relative; }
+.grid { display: grid; grid-template-columns: repeat(9, 40px); grid-template-rows: repeat(9, 40px); gap: 1px; background: #999; border: 2px solid #333; }
+.chain-canvas { position: absolute; top: 2px; left: 2px; pointer-events: none; z-index: 10; }
+.cell { width: 40px; height: 40px; text-align: center; font-size: 20px; font-weight: 600; border: none; outline: none; background: #fff; color: #333; transition: background 0.15s; }
+.cell:focus { background: #e3f2fd; box-shadow: inset 0 0 0 2px #2196f3; z-index: 1; }
+.cell.br { border-right: 2px solid #333; }
+.cell.bb { border-bottom: 2px solid #333; }
+.cell.given { color: #111; background: #f5f5f5; }
+.cell.solved { color: #1565c0; }
+.cell.highlight { background: #fff9c4; }
+.cell.chain-start { background: #c8e6c9; box-shadow: inset 0 0 0 2px #2e7d32; }
+.cell.chain-path { background: #e3f2fd; box-shadow: inset 0 0 0 1px #1565c0; }
+.cell.chain-target { background: #ffebee; box-shadow: inset 0 0 0 2px #c62828; }
+
+/* string import */
+.string-import { display: flex; gap: 6px; margin-bottom: 10px; }
+.string-import input { flex: 1; padding: 8px 10px; font-size: 13px; border: 1px solid #ccc; border-radius: 6px; font-family: "Consolas",monospace; outline: none; }
+.string-import input:focus { border-color: #1a73e8; }
+.string-import button { padding: 8px 14px; font-size: 13px; border: 1px solid #1a73e8; border-radius: 6px; cursor: pointer; background: #fff; color: #1a73e8; white-space: nowrap; }
+.string-import button:hover { background: #e3f2fd; }
+.string-hint { font-size: 11px; color: #999; margin-bottom: 6px; }
+
+/* controls */
+.controls { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.controls button, .controls select { padding: 8px 16px; font-size: 14px; border: 1px solid #ccc; border-radius: 6px; cursor: pointer; background: #fff; }
+.controls button:hover { background: #e8e8e8; }
+.controls button.primary { background: #1a73e8; color: #fff; border-color: #1a73e8; }
+.controls button.primary:hover { background: #1557b0; }
+.controls button.ocr { background: #e8f5e9; color: #2e7d32; border-color: #4caf50; }
+.controls button.ocr:hover { background: #c8e6c9; }
+.controls button.ocr:disabled { background: #eee; color: #999; border-color: #ccc; cursor: wait; }
+.status { font-size: 13px; color: #666; margin-bottom: 8px; min-height: 20px; }
+
+/* OCR overlay */
+.ocr-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 100; align-items: center; justify-content: center; }
+.ocr-overlay.show { display: flex; }
+.ocr-card { background: #fff; border-radius: 12px; padding: 24px; text-align: center; max-width: 360px; width: 90%; }
+.ocr-card .steps { text-align: left; margin: 12px 0; font-size: 13px; color: #555; line-height: 2; }
+.ocr-card .step-done { color: #2e7d32; }
+.ocr-card .step-active { color: #1a73e8; font-weight: 600; }
+.ocr-card img { max-width: 240px; border: 1px solid #ddd; border-radius: 6px; margin: 8px 0; }
+.ocr-card button { margin-top: 12px; padding: 8px 24px; border-radius: 6px; border: none; background: #1a73e8; color: #fff; cursor: pointer; }
+.ocr-card .close-btn { background: #ccc; color: #333; margin-left: 8px; }
+
+/* trace */
+.trace-box { background: #fff; border-radius: 8px; padding: 16px; max-height: 580px; overflow-y: auto; font-size: 13px; line-height: 1.7; white-space: pre-wrap; font-family: "Consolas","Courier New",monospace; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+
+@media (max-width: 800px) { main { flex-direction: column; } .left { flex: none; } }
+</style>
+</head>
+<body>
+
+<header><h1>数独求解器 — 教学版</h1></header>
+
+<main>
+  <div class="left">
+    <div class="grid-wrap">
+      <div class="grid" id="grid"></div>
+      <canvas class="chain-canvas" id="chain-canvas" width="372" height="372"></canvas>
+    </div>
+    <div class="string-hint">或粘贴 81 位数字串（空格用 0）：</div>
+    <div class="string-import">
+      <input type="text" id="puzzle-string" placeholder="530070000600195000098000060..." maxlength="81">
+      <button id="btn-load-string">加载题目</button>
+    </div>
+    <div class="controls">
+      <button class="primary" id="btn-solve">一键求解</button>
+      <button id="btn-step">单步执行</button>
+      <button id="btn-reset">回退一步</button>
+      <button id="btn-clear">清空</button>
+      <button id="btn-clear-chain" style="font-size:12px;padding:8px 10px;">清除标注</button>
+    </div>
+    <div class="controls">
+      <button class="ocr" id="btn-ocr" disabled>拍照识别 (引擎加载中...)</button>
+      <input type="file" id="ocr-file" accept="image/*" style="display:none">
+      <select id="samples"><option value="">— 载入示例 —</option></select>
+    </div>
+    <div class="status" id="status">OpenCV 引擎加载中，请稍候...</div>
+  </div>
+
+  <div class="right">
+    <div class="trace-box" id="trace"></div>
+  </div>
+</main>
+
+<!-- OCR 进度弹窗 -->
+<div class="ocr-overlay" id="ocr-overlay">
+  <div class="ocr-card">
+    <h3>图像识别中</h3>
+    <img id="ocr-preview" alt="" style="display:none">
+    <div class="steps" id="ocr-steps"></div>
+    <button id="ocr-close" class="close-btn">关闭</button>
+  </div>
+</div>
+
+<!-- OpenCV.js (异步加载) -->
+<script async src="https://docs.opencv.org/4.10.0/opencv.js"
+  onload="window._opencvLoaded &amp;&amp; window._opencvLoaded()"></script>
+<!-- Tesseract.js -->
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script src="app.js"></script>
+
+</body>
+</html>
